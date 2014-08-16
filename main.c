@@ -7,16 +7,20 @@
  *
  */
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include <CoreAudio/CoreAudio.h>
 
-#include <CoreAudio/AudioHardware.h>
-#include <CoreAudio/CoreAudioTypes.h>
 
-#include "audio.h"
-#include "util.h"
+struct pcm_data {
+    int samplerate;
+    int channels;
+    int len;
+    char buf[4096];
+};
+
 
 typedef struct {
     AudioDeviceID adev_id;
@@ -50,11 +54,13 @@ void *audio_init(void) {
     UInt32 sz;
     AudioStreamBasicDescription fmt;
     CoreAudioDevice *device;
+    AudioObjectPropertyAddress paddr;
 
 
-    DSFYDEBUG("Initializing CoreAudio\n");
-    sz = sizeof (adev_id);
-    s = AudioHardwareGetProperty(kAudioHardwarePropertyDefaultOutputDevice, &sz, &adev_id);
+    printf("Initializing CoreAudio\n");
+    sz = sizeof(adev_id);
+    paddr = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+    s = AudioObjectGetPropertyData(kAudioObjectSystemObject, &paddr, 0, NULL, &sz, &adev_id);
     if(s != 0) {
         fprintf(stderr, "AudioHardwareGetProperty() failed with error %d\n", s);
         return NULL;
@@ -67,8 +73,9 @@ void *audio_init(void) {
 
     /* Find out the bounds of buffer frame size */
     sz = sizeof(avr);
-    if ((s = AudioDeviceGetProperty(adev_id, 0, false,
-            kAudioDevicePropertyBufferFrameSizeRange, &sz, &avr))) {
+    paddr = {kAudioDevicePropertyBufferFrameSizeRange, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+    s = AudioObjectGetPropertyData(adev_id, &paddr, 0, NULL, &sz, &avr);
+    if (s) {
         printf("AudioDeviceGetProperty() failed with error %d\n", s);
         return NULL;
     }
@@ -82,8 +89,8 @@ void *audio_init(void) {
 
     /* Set buffer frame size for device */
     sz = sizeof (framesize);
-    s = AudioDeviceSetProperty (adev_id, 0, 0, false,
-            kAudioDevicePropertyBufferFrameSize, sz, &framesize);
+    paddr = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+    s = AudioObjectGetPropertyData(adev_id, &paddr, 0, NULL, &sz, &framesize);
     if (s != kAudioHardwareNoError) {
         fprintf(stderr, "AudioDeviceSetProperty() failed with error %d\n", s);
         return NULL;
@@ -92,10 +99,10 @@ void *audio_init(void) {
 
     /* Get current audio format */
     sz = sizeof (fmt);
-    if (AudioDeviceGetProperty
-            (adev_id, 0, false, kAudioDevicePropertyStreamFormat,
-                    &sz, &fmt)) {
-        DSFYDEBUG ("AudioDeviceGetProperty() failed\n");
+    paddr = {kAudioDevicePropertyStreamFormat, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+    s = AudioObjectGetPropertyData(adev_id, &paddr, 0, NULL, &sz, &fmt);
+    if (s) {
+        printf ("AudioDeviceGetProperty() failed\n");
         return NULL;
     }
 
@@ -113,45 +120,29 @@ void *audio_init(void) {
 
     /* Update audio format */
     sz = sizeof (fmt);
-    if (AudioDeviceSetProperty
-            (adev_id, NULL, 0, false,
-                    kAudioDevicePropertyStreamFormat, sz, &fmt)) {
-        DSFYDEBUG ("AudioDeviceSetProperty() failed\n");
+    paddr = {kAudioDevicePropertyStreamFormat, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+    s = AudioObjectSetPropertyData(adev_id, &paddr, 0, NULL, sz, &fmt);
+    if (s) {
+        printf ("AudioDeviceSetProperty() failed\n");
         return NULL;
     }
 
-    DSFYDEBUG ("kAudioDevicePropertyStreamFormat: mSampleRate %f\n",
-            fmt.mSampleRate);
-    DSFYDEBUG
-            ("kAudioDevicePropertyStreamFormat: mFormatFlags 0x%08x (IsSignedInteger:%s, isFloat:%s, isBigEndian:%s, kLinearPCMFormatFlagIsNonInterleaved:%s, kAudioFormatFlagIsPacked:%s)\n",
+    printf ("kAudioDevicePropertyStreamFormat: mSampleRate %f\n", fmt.mSampleRate);
+    printf("kAudioDevicePropertyStreamFormat: mFormatFlags 0x%08x (IsSignedInteger:%s, isFloat:%s, isBigEndian:%s, kLinearPCMFormatFlagIsNonInterleaved:%s, kAudioFormatFlagIsPacked:%s)\n",
                     fmt.mFormatFlags,
-                    fmt.mFormatFlags & kLinearPCMFormatFlagIsSignedInteger ?
-                            "yes" : "no",
-                    fmt.mFormatFlags & kLinearPCMFormatFlagIsFloat ? "yes" :
-                            "no",
-                    fmt.mFormatFlags & kLinearPCMFormatFlagIsBigEndian ? "yes" :
-                            "no",
-                    fmt.mFormatFlags & kLinearPCMFormatFlagIsNonInterleaved ?
-                            "yes" : "no",
+                    fmt.mFormatFlags & kLinearPCMFormatFlagIsSignedInteger ? "yes" : "no",
+                    fmt.mFormatFlags & kLinearPCMFormatFlagIsFloat ? "yes" : "no",
+                    fmt.mFormatFlags & kLinearPCMFormatFlagIsBigEndian ? "yes" : "no",
+                    fmt.mFormatFlags & kLinearPCMFormatFlagIsNonInterleaved ? "yes" : "no",
                     fmt.mFormatFlags & kAudioFormatFlagIsPacked ? "yes" : "no");
-
-    DSFYDEBUG ("kAudioDevicePropertyStreamFormat: mBitsPerChannel %u\n",
-            fmt.mBitsPerChannel);
-    DSFYDEBUG
-            ("kAudioDevicePropertyStreamFormat: mChannelsPerFrame %u\n",
-                    fmt.mChannelsPerFrame);
-    DSFYDEBUG ("kAudioDevicePropertyStreamFormat: mFramesPerPacket %u\n",
-            fmt.mFramesPerPacket);
-    DSFYDEBUG ("kAudioDevicePropertyStreamFormat: mBytesPerFrame %u\n",
-            fmt.mBytesPerFrame);
-    DSFYDEBUG ("kAudioDevicePropertyStreamFormat: mBytesPerPacket %u\n",
-            fmt.mBytesPerPacket);
-
-
+    printf ("kAudioDevicePropertyStreamFormat: mBitsPerChannel %u\n", fmt.mBitsPerChannel);
+    printf ("kAudioDevicePropertyStreamFormat: mChannelsPerFrame %u\n", fmt.mChannelsPerFrame);
+    printf ("kAudioDevicePropertyStreamFormat: mFramesPerPacket %u\n", fmt.mFramesPerPacket);
+    printf ("kAudioDevicePropertyStreamFormat: mBytesPerFrame %u\n", fmt.mBytesPerFrame);
+    printf ("kAudioDevicePropertyStreamFormat: mBytesPerPacket %u\n", fmt.mBytesPerPacket);
 
     device = (CoreAudioDevice *)malloc(sizeof(CoreAudioDevice));
-    if(!device)
-        return NULL;
+    if (!device) return NULL;
 
 
     device->adev_id = adev_id;
@@ -160,7 +151,7 @@ void *audio_init(void) {
     device->bufsize = sizeof(short) * 32768;
     if (AudioDeviceCreateIOProcID
             (device->adev_id, audio_callback, device, &device->proc_id)) {
-        DSFYDEBUG ("AudioDeviceCreateIOProcID() returned FAIL!\n");
+        printf ("AudioDeviceCreateIOProcID() returned FAIL!\n");
 
         free(device);
         return NULL;
@@ -172,7 +163,7 @@ void *audio_init(void) {
     pthread_cond_init(&device->event, NULL);
     pthread_cond_init(&device->hold, NULL);
 
-    DSFYDEBUG("Done initializing CoreAudio\n");
+    printf("Done initializing CoreAudio\n");
 
     return device;
 }
@@ -181,18 +172,18 @@ void *audio_init(void) {
 int audio_exit(void *private) {
     CoreAudioDevice *device = (CoreAudioDevice *)private;
 
-    DSFYDEBUG("Attempting exit with device at %p\n", device);
+    printf("Attempting exit with device at %p\n", device);
     if(!device)
         return -1;
 
     pthread_mutex_lock(&device->mutex);
     if(device->playing) {
         device->playing = 0;
-        DSFYDEBUG("Currently playing, signalling event and stopping CoreAudio\n");
+        printf("Currently playing, signalling event and stopping CoreAudio\n");
         pthread_cond_signal(&device->event);
         pthread_mutex_unlock(&device->mutex);
         if(AudioDeviceStop (device->adev_id, device->proc_id)) {
-            DSFYDEBUG ("audio_exit(): AudioDeviceStop() failed\n");
+            printf ("audio_exit(): AudioDeviceStop() failed\n");
             return -1;
         }
         pthread_mutex_lock(&device->mutex);
@@ -200,7 +191,7 @@ int audio_exit(void *private) {
     pthread_mutex_unlock(&device->mutex);
 
 
-    DSFYDEBUG("Destryoing mutex and condition variables\n");
+    printf("Destryoing mutex and condition variables\n");
     pthread_cond_destroy(&device->hold);
     pthread_cond_destroy(&device->event);
     pthread_mutex_destroy(&device->mutex);
@@ -216,15 +207,15 @@ int audio_play_pcm (void* private, struct pcm_data* pcm) {
     int bytes_to_copy;
 
     if(!device) {
-        DSFYDEBUG ("Attempt to play with no output device\n");
+        printf ("Attempt to play with no output device\n");
         return -1;
     }
     else if(pcm->channels != 2) {
-        DSFYDEBUG ("Unsupported number of channels: %d!\n", pcm->channels);
+        printf ("Unsupported number of channels: %d!\n", pcm->channels);
         return -1;
     }
     else if(pcm->samplerate != 44100) {
-        DSFYDEBUG ("Unsupported sample rate: %d!\n", pcm->samplerate);
+        printf ("Unsupported sample rate: %d!\n", pcm->samplerate);
         return -1;
     }
 
@@ -233,9 +224,9 @@ int audio_play_pcm (void* private, struct pcm_data* pcm) {
 
     /* Sleep if the we can't handle the sent PCM data right now */
     while(device->buflen + pcm->len >= device->bufsize) {
-        DSFYDEBUG ("Buffer too full, sleeping..\n");
+        printf ("Buffer too full, sleeping..\n");
         pthread_cond_wait(&device->hold, &device->mutex);
-        DSFYDEBUG("Buffer has shrunk in size, now have %d bytes free\n", device->bufsize - device->buflen);
+        printf("Buffer has shrunk in size, now have %d bytes free\n", device->bufsize - device->buflen);
     }
 
     bytes_to_copy = device->bufsize - device->buflen;
@@ -249,9 +240,9 @@ int audio_play_pcm (void* private, struct pcm_data* pcm) {
     if(!device->playing) {
         device->playing = 1;
 
-        DSFYDEBUG ("Not yet playing, calling AudioDeviceStart()\n");
+        printf ("Not yet playing, calling AudioDeviceStart()\n");
         if (AudioDeviceStart (device->adev_id, device->proc_id)) {
-            DSFYDEBUG ("AudioDeviceStart() failed\n");
+            printf ("AudioDeviceStart() failed\n");
             pthread_mutex_unlock(&device->mutex);
             return -1;
         }
@@ -265,7 +256,8 @@ int audio_play_pcm (void* private, struct pcm_data* pcm) {
 }
 
 
-static OSStatus audio_callback (AudioDeviceID dev,
+static OSStatus audio_callback(
+        AudioDeviceID dev,
         const AudioTimeStamp * ts_now,
         const AudioBufferList * bufin,
         const AudioTimeStamp * ts_inputtime,
@@ -288,12 +280,12 @@ static OSStatus audio_callback (AudioDeviceID dev,
     pthread_mutex_lock(&device->mutex);
     while (samples_to_write) {
         while(device->buflen == 0 && device->playing == 1) {
-            DSFYDEBUG ("Zero bytes available and playing, waiting..\n");
+            printf ("Zero bytes available and playing, waiting..\n");
             pthread_cond_wait(&device->event, &device->mutex);
         }
 
         if(!device->playing) {
-            DSFYDEBUG ("Stopping playback due to device->playing==0\n");
+            printf ("Stopping playback due to device->playing==0\n");
             break;
         }
 
@@ -317,11 +309,59 @@ static OSStatus audio_callback (AudioDeviceID dev,
     }
 
     if(device->buflen < device->bufsize/2) {
-        DSFYDEBUG("Buffer half empty, signalling condition in audio_pcm_play()\n");
+        printf("Buffer half empty, signalling condition in audio_pcm_play()\n");
         pthread_cond_signal(&device->hold);
     }
 
     pthread_mutex_unlock(&device->mutex);
 
+    return 0;
+}
+
+
+
+void* outData = NULL;
+UInt32 outDataSize = 0;
+const int BCH_SIZE = 4096;
+const int BUF_SIZE = BCH_SIZE * 4096;
+
+UInt32 GetStdinData(void* buf, long buf_size)
+{
+    UInt32 tot = 0;
+
+    while (1) {
+        float temp[BCH_SIZE];
+        unsigned count;
+
+        count = fread(temp, sizeof(float), BCH_SIZE, stdin);
+
+        if (count == 0 || tot + count > buf_size) break;
+        memcpy(buf + tot * sizeof(float), temp, count * sizeof(float));
+        tot += count;
+    }
+    return tot;
+}
+
+
+
+int main(int argc, char *argv[]) {
+    if (isatty(fileno(stdin))) return 0;
+
+    outData = (float *)malloc(sizeof(float) * BUF_SIZE);
+    outDataSize = GetStdinData(outData, BUF_SIZE);
+    printf("outDataSize = %d\n", outDataSize);
+
+    CoreAudioDevice *dev = audio_init();
+
+    int buflen = 4096;
+    for(int offs = 0; offs < outDataSize; offs += buflen) {
+        char smallbuf[buflen];
+        memcpy(smallbuf, outData + offs, buflen);
+        struct pcm_data pcm = {44100, 2, buflen, smallbuf};
+        struct pcm_data *pcm_p = &pcm;
+        audio_play_pcm(dev, pcm_p);
+    }
+
+    audio_exit(dev);
     return 0;
 }
