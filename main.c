@@ -54,14 +54,13 @@ void *audio_init(void) {
     UInt32 sz;
     AudioStreamBasicDescription fmt;
     CoreAudioDevice *device;
-    AudioObjectPropertyAddress paddr;
 
 
     printf("Initializing CoreAudio\n");
     sz = sizeof(adev_id);
-    paddr = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+    AudioObjectPropertyAddress paddr = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
     s = AudioObjectGetPropertyData(kAudioObjectSystemObject, &paddr, 0, NULL, &sz, &adev_id);
-    if(s != 0) {
+    if (s) {
         fprintf(stderr, "AudioHardwareGetProperty() failed with error %d\n", s);
         return NULL;
     }
@@ -73,7 +72,7 @@ void *audio_init(void) {
 
     /* Find out the bounds of buffer frame size */
     sz = sizeof(avr);
-    paddr = {kAudioDevicePropertyBufferFrameSizeRange, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+    paddr.mSelector = kAudioDevicePropertyBufferFrameSizeRange;
     s = AudioObjectGetPropertyData(adev_id, &paddr, 0, NULL, &sz, &avr);
     if (s) {
         printf("AudioDeviceGetProperty() failed with error %d\n", s);
@@ -89,7 +88,7 @@ void *audio_init(void) {
 
     /* Set buffer frame size for device */
     sz = sizeof (framesize);
-    paddr = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
+    paddr.mSelector = kAudioDevicePropertyBufferFrameSize;
     s = AudioObjectGetPropertyData(adev_id, &paddr, 0, NULL, &sz, &framesize);
     if (s != kAudioHardwareNoError) {
         fprintf(stderr, "AudioDeviceSetProperty() failed with error %d\n", s);
@@ -99,7 +98,8 @@ void *audio_init(void) {
 
     /* Get current audio format */
     sz = sizeof (fmt);
-    paddr = {kAudioDevicePropertyStreamFormat, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
+    paddr.mSelector = kAudioDevicePropertyStreamFormat;
+    paddr.mScope = kAudioObjectPropertyScopeOutput;
     s = AudioObjectGetPropertyData(adev_id, &paddr, 0, NULL, &sz, &fmt);
     if (s) {
         printf ("AudioDeviceGetProperty() failed\n");
@@ -120,7 +120,6 @@ void *audio_init(void) {
 
     /* Update audio format */
     sz = sizeof (fmt);
-    paddr = {kAudioDevicePropertyStreamFormat, kAudioObjectPropertyScopeOutput, kAudioObjectPropertyElementMaster};
     s = AudioObjectSetPropertyData(adev_id, &paddr, 0, NULL, sz, &fmt);
     if (s) {
         printf ("AudioDeviceSetProperty() failed\n");
