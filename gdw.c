@@ -26,7 +26,7 @@ int CAStartPlayback(int channels, long buffFrames) {
     AudioObjectPropertyAddress propAddr = {kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMaster};
     err = AudioObjectGetPropertyData(kAudioObjectSystemObject, &propAddr, 0, NULL, &propSize, &playDevice);
     if (err != kAudioHardwareNoError) {
-        printf("OpenSoundOutput: AudioHardwareGetProperty-kAudioHardwarePropertyDefaultOutputDevice returned error: %d \n", err);
+        fprintf(stderr, "OpenSoundOutput: AudioHardwareGetProperty-kAudioHardwarePropertyDefaultOutputDevice returned error: %d \n", err);
         return 0;
     }
 
@@ -37,12 +37,12 @@ int CAStartPlayback(int channels, long buffFrames) {
     propAddr.mScope = kAudioObjectPropertyScopeOutput;
     err = AudioObjectSetPropertyData(playDevice, &propAddr, 0, NULL, propSize, &playDeviceBufferSize);
     if (err != kAudioHardwareNoError) {
-        printf("OpenSoundOutput: AudioDeviceSetProperty-kAudioDevicePropertyBufferSize returned error: %d \n", err);
+        fprintf(stderr, "OpenSoundOutput: AudioDeviceSetProperty-kAudioDevicePropertyBufferSize returned error: %d \n", err);
         return 0;
     }
     err = AudioObjectGetPropertyData(playDevice, &propAddr, 0, NULL, &propSize, &playDeviceBufferSize);
     if (err != kAudioHardwareNoError) {
-        printf("OpenSoundOutput: AudioDeviceGetProperty-kAudioDevicePropertyBufferSize returned error: %d \n", err);
+        fprintf(stderr, "OpenSoundOutput: AudioDeviceGetProperty-kAudioDevicePropertyBufferSize returned error: %d \n", err);
         return 0;
     }
 
@@ -51,35 +51,35 @@ int CAStartPlayback(int channels, long buffFrames) {
     propAddr.mSelector = kAudioDevicePropertyStreamFormat;
     err = AudioObjectGetPropertyData(playDevice, &propAddr, 0, NULL, &propSize, &playDeviceFormat);
     if (err != kAudioHardwareNoError) {
-        printf("OpenSoundOutput: AudioDeviceGetProperty-kAudioDevicePropertyStreamFormat returned error: %d \n", err);
+        fprintf(stderr, "OpenSoundOutput: AudioDeviceGetProperty-kAudioDevicePropertyStreamFormat returned error: %d \n", err);
         return 0;
     }
     if (playDeviceFormat.mFormatID != kAudioFormatLinearPCM) {
-        printf("OpenSoundOutput: playDevice is not linear PCM.");
+        fprintf(stderr, "OpenSoundOutput: playDevice is not linear PCM.");
         return 0;
     }
     if (!(playDeviceFormat.mFormatFlags & kLinearPCMFormatFlagIsFloat)) {
-        printf("OpenSoundOutput: playDevice is not float.");
+        fprintf(stderr, "OpenSoundOutput: playDevice is not float.");
         return 0;
     }
     playDeviceFormat.mSampleRate = SAMPLE_RATE;
     err = AudioObjectSetPropertyData(playDevice, &propAddr, 0, NULL, propSize, &playDeviceFormat);
     if (err != kAudioHardwareNoError) {
-        printf("OpenSoundOutput: setting sample rate failed: %d \n", err);
+        fprintf(stderr, "OpenSoundOutput: setting sample rate failed: %d \n", err);
         return 0;
     }
 
     deviceBufferFrames = playDeviceBufferSize / (sizeof(float) * channels);
     playDeviceChannels = channels;
 
-    printf("OpenSoundOutput: Buffer Size = %d\n", playDeviceBufferSize);
-    printf("OpenSoundOutput: SampleRate = %f\n", playDeviceFormat.mSampleRate);
-    printf("OpenSoundOutput: FormatFlags = %d\n", playDeviceFormat.mFormatFlags);
-    printf("OpenSoundOutput: BytesPerPacket = %d\n", playDeviceFormat.mBytesPerPacket);
-    printf("OpenSoundOutput: FramesPerPacket = %d\n", playDeviceFormat.mFramesPerPacket);
-    printf("OpenSoundOutput: ChannelsPerFrame = %d\n", playDeviceFormat.mChannelsPerFrame);
-    printf("OpenSoundOutput: BytesPerFrame = %d\n", playDeviceFormat.mBytesPerFrame);
-    printf("OpenSoundOutput: BitsPerChannel = %d\n", playDeviceFormat.mBitsPerChannel);
+    fprintf(stderr, "OpenSoundOutput: Buffer Size = %d\n", playDeviceBufferSize);
+    fprintf(stderr, "OpenSoundOutput: SampleRate = %f\n", playDeviceFormat.mSampleRate);
+    fprintf(stderr, "OpenSoundOutput: FormatFlags = %d\n", playDeviceFormat.mFormatFlags);
+    fprintf(stderr, "OpenSoundOutput: BytesPerPacket = %d\n", playDeviceFormat.mBytesPerPacket);
+    fprintf(stderr, "OpenSoundOutput: FramesPerPacket = %d\n", playDeviceFormat.mFramesPerPacket);
+    fprintf(stderr, "OpenSoundOutput: ChannelsPerFrame = %d\n", playDeviceFormat.mChannelsPerFrame);
+    fprintf(stderr, "OpenSoundOutput: BytesPerFrame = %d\n", playDeviceFormat.mBytesPerFrame);
+    fprintf(stderr, "OpenSoundOutput: BitsPerChannel = %d\n", playDeviceFormat.mBitsPerChannel);
 
     for (int i = 0; i < MAX_PLAY_BUFFS; i++) {
         playBuffer[i] = malloc(sizeof(float) * channels * buffFrames);
@@ -98,13 +98,8 @@ static OSStatus appOutputIOProc (
         const AudioTimeStamp* inOutputTime,
         void* defptr)
 {
-    float  *out = outOutputData->mBuffers[0].mData;
-    int  numFrames = playDeviceBufferSize / playDeviceFormat.mBytesPerFrame;
-    int  numChannels = playDeviceChannels;
-    float  *p;
-
     if (!playing) {
-        printf("appOutputIOProc: called when not playing!!!");
+        fprintf(stderr, "appOutputIOProc: called when not playing!!!");
         return kAudioHardwareNoError;
     }
 
@@ -114,24 +109,27 @@ static OSStatus appOutputIOProc (
     //        currTime = inOutputTime->mSampleTime;
     //        if (ioLastPlayBufferTime!=-1) {
     //            if (currTime - ioLastPlayBufferTime != deviceBufferFrames) {
-    //                printf("appOutputIOProc: underflowed...we skipped.", currTime - ioLastPlayBufferTime);
+    //                fprintf(stderr, "appOutputIOProc: underflowed...we skipped.", currTime - ioLastPlayBufferTime);
     //            } else ioLastPlayBufferTime = currTime;
     //        } else ioLastPlayBufferTime = currTime;
     //    }
     //#endif
 
     if (playBufferCount==0) {
-        printf("appOutputIOProc: underflowed...");
+        fprintf(stderr, "appOutputIOProc: underflowed...");
         return kAudioHardwareNoError;
     }
 
-    p = playBuffer[playBufferHead++];
+    int  numFrames = playDeviceBufferSize / playDeviceFormat.mBytesPerFrame;
+    float  *out = outOutputData->mBuffers[0].mData;
+
+    float  *p = playBuffer[playBufferHead++];
 
     if (playBufferHead==MAX_PLAY_BUFFS)
         playBufferHead = 0;
 
     for(int i=0; i<numFrames; i++) {
-        for(int j=0; j<numChannels; j++) {
+        for(int j=0; j<playDeviceChannels; j++) {
             *out++ = *p;    /* do channels */
         }
         p++;
@@ -165,13 +163,13 @@ int CAPlayBuffer(float *buffer, long buffSamples)
         // setup our device with an IO proc
         err = AudioDeviceCreateIOProcID(playDevice, appOutputIOProc, NULL, &theIOProcID);
         if (err != kAudioHardwareNoError) {
-            printf("_StartPlayIO: AudioDeviceAddIOProc() failed: %d \n", err);
+            fprintf(stderr, "_StartPlayIO: AudioDeviceAddIOProc() failed: %d \n", err);
             return 0;
         }
         // start playing sound through the device
         err = AudioDeviceStart(playDevice, theIOProcID);
         if (err != kAudioHardwareNoError) {
-            printf("_StartPlayIO: AudioDeviceStart() failed: %d \n", err);
+            fprintf(stderr, "_StartPlayIO: AudioDeviceStart() failed: %d \n", err);
             return 0;
         }
 
@@ -184,7 +182,7 @@ int CAPlayBuffer(float *buffer, long buffSamples)
 int CAStopPlayback()
 {
     if (!playing) {
-        printf("_StopPlayIO: was not playing.");
+        fprintf(stderr, "_StopPlayIO: was not playing.");
         return 0;
     }
 
@@ -192,13 +190,13 @@ int CAStopPlayback()
     // stop playing sound through the device
     err = AudioDeviceStop(playDevice, theIOProcID);
     if (err != kAudioHardwareNoError) {
-        printf("_StopPlayIO: AudioDeviceStop() failed: %d \n", err);
+        fprintf(stderr, "_StopPlayIO: AudioDeviceStop() failed: %d \n", err);
         return 0;
     }
     // remove the IO proc from the device
     err = AudioDeviceDestroyIOProcID(playDevice, theIOProcID);
     if (err != kAudioHardwareNoError) {
-        printf("_StopPlayIO: AudioDeviceRemoveIOProc() failed: %d \n", err);
+        fprintf(stderr, "_StopPlayIO: AudioDeviceRemoveIOProc() failed: %d \n", err);
         return 0;
     }
     return 1;
