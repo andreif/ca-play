@@ -108,17 +108,17 @@ static OSStatus appOutputIOProc (
         return kAudioHardwareNoError;
     }
 
-//#ifndef _DEBUG_VERSION_
-//    {
-//        long currTime;
-//        currTime = inOutputTime->mSampleTime;
-//        if (ioLastPlayBufferTime!=-1) {
-//            if (currTime - ioLastPlayBufferTime != deviceBufferFrames) {
-//                printf("appOutputIOProc: underflowed...we skipped.", currTime - ioLastPlayBufferTime);
-//            } else ioLastPlayBufferTime = currTime;
-//        } else ioLastPlayBufferTime = currTime;
-//    }
-//#endif
+    //#ifndef _DEBUG_VERSION_
+    //    {
+    //        long currTime;
+    //        currTime = inOutputTime->mSampleTime;
+    //        if (ioLastPlayBufferTime!=-1) {
+    //            if (currTime - ioLastPlayBufferTime != deviceBufferFrames) {
+    //                printf("appOutputIOProc: underflowed...we skipped.", currTime - ioLastPlayBufferTime);
+    //            } else ioLastPlayBufferTime = currTime;
+    //        } else ioLastPlayBufferTime = currTime;
+    //    }
+    //#endif
 
     if (playBufferCount==0) {
         printf("appOutputIOProc: underflowed...");
@@ -139,6 +139,7 @@ static OSStatus appOutputIOProc (
 
     playBufferCount--;
     fprintf(stderr, "-%d ", playBufferCount);
+
     return kAudioHardwareNoError;
 }
 
@@ -149,20 +150,14 @@ int CAPlayBuffer(float *buffer, long buffSamples)
 
     while (playBufferCount==MAX_PLAY_BUFFS);
 
-    {
-        float *p;
+    float *p = playBuffer[playBufferTail++];
+    if (playBufferTail==MAX_PLAY_BUFFS)
+        playBufferTail = 0;
+    for (int i=0; i<buffSamples; i++)
+        *p++ = buffer[i];
+    playBufferCount++;
 
-        p = playBuffer[playBufferTail++];
-
-        if (playBufferTail==MAX_PLAY_BUFFS)
-            playBufferTail = 0;
-
-        for (int i=0; i<buffSamples; i++)
-            *p++ = buffer[i];
-
-        playBufferCount++;
-        fprintf(stderr, "+%d ", playBufferCount);
-    }
+    fprintf(stderr, "+%d ", playBufferCount);
 
     if (!playing && playBufferCount == 2) {
         ioLastPlayBufferTime = -1L;    /* reset */
