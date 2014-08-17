@@ -210,22 +210,32 @@ int main (int argc, const char * argv[]) {
 
     if (!CAStartPlayback(2, CA_BUFF_MAX)) {
         fprintf(stderr, "Could not start Core Audio playback.\n");
-        return(1);
+        return 1;
     }
 
     while (!feof(stdin)) {
-        fread(&f, sizeof(float), sizeof(float), stdin);
-        buff[index++] = f;
-        if (index==CA_BUFF_MAX) {
-            if (!CAPlayBuffer(buff, index)) {
+        if (0) { /////////// slow playback
+            int sz = fread(buff, sizeof(float), CA_BUFF_MAX, stdin);
+            if (!CAPlayBuffer(buff, sz)) {
                 fprintf(stderr, "Could not play Core Audio buffer.\n");
-                return(2);
+                return 2;
             }
-            index=0;
+        } else { /////////// fast playback
+            fread(&f, sizeof(float), sizeof(float), stdin);
+            buff[index++] = f;
+            if (index == CA_BUFF_MAX) {
+                if (!CAPlayBuffer(buff, index)) {
+                    fprintf(stderr, "Could not play Core Audio buffer.\n");
+                    return 2;
+                }
+                index = 0;
+            }
         }
     }
-    sleep(1);
+
+    sleep(1); // wait for the last data to play
+
     CAStopPlayback();
 
-    return(0);
+    return 0;
 }
